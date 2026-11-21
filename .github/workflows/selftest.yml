@@ -1,0 +1,20 @@
+name: selftest
+
+# 共享工作流自己的体检：任何人改动 lgd-reusable-ci.yml 之前，
+# 这个 workflow 会先用本仓真实内容把 reusable workflow 跑一遍。
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  self:
+    uses: ./.github/workflows/lgd-reusable-ci.yml
+    with:
+      python-version: "3.11"
+      run-tests: false
+      require-skill-md: false
