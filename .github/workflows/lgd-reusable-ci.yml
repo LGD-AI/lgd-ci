@@ -49,7 +49,7 @@ jobs:
               if any(p in SKIP for p in parts):
                   continue
               for fn in sorted(files):
-                  if not fn.endswith('.json'):
+                  if not fn.endswith('.json') or fn.startswith('tsconfig'):
                       continue
                   p = os.path.join(root, fn)
                   rel = os.path.relpath(p, '.')
