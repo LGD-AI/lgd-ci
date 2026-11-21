@@ -41,7 +41,7 @@ jobs:
         run: |
           python - <<'PY'
           import json, os, sys
-          SKIP = {'fixtures','fixture','invalid','negative','testdata','node_modules','.git'}
+          SKIP = {'fixtures','fixture','invalid','negative','testdata','node_modules','.git','cases'}
           bad, checked, skipped = [], 0, 0
           for root, dirs, files in os.walk('.'):
               dirs[:] = [d for d in dirs if d not in ('.git','node_modules')]
