@@ -39,22 +39,35 @@ jobs:
           fi
       - name: JSON sanity
         run: |
-          bad=0
-          checked=0
-          skipped=0
-          while IFS= read -r f; do
-            out=$(python -c "import json,sys;s=open(sys.argv[1],encoding='utf-8-sig').read().strip();json.loads(s) if s else print('EMPTY')" "$f" 2>&1) \
-              || { echo "::error file=$f::invalid JSON"; echo "$out"; bad=1; continue; }
-            case "$out" in *EMPTY*) skipped=$((skipped+1));; *) checked=$((checked+1));; esac
-          done <<EOF
-          $(find . -name '*.json' -not -path './.git/*' \
-              -not -path '*/fixtures/*' -not -path '*/fixture/*' \
-              -not -path '*/invalid/*' -not -path '*/negative/*' \
-              -not -path '*/testdata/*' -not -path '*/examples/broken/*' \
-              -not -path '*/node_modules/*' | sort | head -n 200)
-          EOF
-          echo "checked=$checked skipped_empty=$skipped"
-          exit $bad
+          python - <<'PY'
+          import json, os, sys
+          SKIP = {'fixtures','fixture','invalid','negative','testdata','node_modules','.git'}
+          bad, checked, skipped = [], 0, 0
+          for root, dirs, files in os.walk('.'):
+              dirs[:] = [d for d in dirs if d not in ('.git','node_modules')]
+              parts = os.path.normpath(root).split(os.sep)
+              if any(p in SKIP for p in parts):
+                  continue
+              for fn in sorted(files):
+                  if not fn.endswith('.json'):
+                      continue
+                  p = os.path.join(root, fn)
+                  rel = os.path.relpath(p, '.')
+                  try:
+                      txt = open(p, encoding='utf-8-sig').read().strip()
+                  except Exception as e:
+                      bad.append(rel + '  unreadable: ' + str(e)); continue
+                  if not txt:
+                      skipped += 1; continue
+                  try:
+                      json.loads(txt); checked += 1
+                  except Exception as e:
+                      bad.append(rel + '  ' + str(e))
+          for b in bad:
+              print('::error file=' + b)
+          print('checked=' + str(checked) + ' skipped_empty=' + str(skipped) + ' bad=' + str(len(bad)))
+          sys.exit(1 if bad else 0)
+          PY
       - name: Tests
         if: ${{ inputs.run-tests }}
         run: |
