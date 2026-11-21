@@ -1,0 +1,54 @@
+name: lgd-reusable-ci
+on:
+  workflow_call:
+    inputs:
+      python-version:
+        type: string
+        default: "3.11"
+      run-tests:
+        type: boolean
+        default: true
+      require-skill-md:
+        type: boolean
+        default: false
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: lgd-ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python-version }}
+      - name: Verify required layout
+        run: |
+          set -e
+          if [ "${{ inputs.require-skill-md }}" = "true" ] && [ ! -f SKILL.md ]; then
+            echo "::error::SKILL.md is required but missing"; exit 1
+          fi
+          echo "layout OK"
+      - name: JSON sanity
+        run: |
+          set -e
+          bad=0
+          while IFS= read -r f; do
+            python -c "import json,sys;json.load(open(sys.argv[1]))" "$f" || bad=1
+          done < <(find . -name '*.json' -not -path './.git/*' | head -n 50)
+          exit $bad
+      - name: Tests
+        if: ${{ inputs.run-tests }}
+        run: |
+          set -e
+          if [ -d tests ]; then
+            python -m pip install --upgrade pip
+            if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+            python -m pytest -q
+          else
+            echo "no tests directory - skipped"
+          fi
