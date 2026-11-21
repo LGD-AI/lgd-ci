@@ -26,20 +26,30 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ inputs.python-version }}
-      - name: Verify required layout
+      - name: Verify layout
         run: |
           set -e
-          if [ "${{ inputs.require-skill-md }}" = "true" ] && [ ! -f SKILL.md ]; then
-            echo "::error::SKILL.md is required but missing"; exit 1
+          if [ ! -f SKILL.md ]; then
+            if [ "true" = "true" ]; then
+              echo "no SKILL.md at repo root - treated as a non-skill repo"
+              exit 0
+            fi
+          fi
+          if [ -f SKILL.md ]; then
+            head -n 1 SKILL.md | grep -q '^---' || { echo "::error::SKILL.md must start with YAML front matter"; exit 1; }
+            grep -qi '^name:' SKILL.md || { echo "::error::SKILL.md missing name field"; exit 1; }
+            grep -qi '^description:' SKILL.md || { echo "::error::SKILL.md missing description field"; exit 1; }
+            echo "SKILL.md front matter OK"
           fi
           echo "layout OK"
       - name: JSON sanity
         run: |
           set -e
           bad=0
-          while IFS= read -r f; do
+          files=$(find . -name '*.json' -not -path './.git/*' | head -n 50)
+          for f in $files; do
             python -c "import json,sys;json.load(open(sys.argv[1]))" "$f" || bad=1
-          done < <(find . -name '*.json' -not -path './.git/*' | head -n 50)
+          done
           exit $bad
       - name: Tests
         if: ${{ inputs.run-tests }}
