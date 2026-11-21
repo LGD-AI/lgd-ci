@@ -43,9 +43,9 @@ jobs:
           checked=0
           skipped=0
           while IFS= read -r f; do
-            if ! grep -q '[^[:space:]]' "$f"; then skipped=$((skipped+1)); continue; fi
-            checked=$((checked+1))
-            python -c "import json,sys;json.load(open(sys.argv[1]))" "$f" || { echo "::error file=$f::invalid JSON"; bad=1; }
+            out=$(python -c "import json,sys;s=open(sys.argv[1],encoding='utf-8-sig').read().strip();json.loads(s) if s else print('EMPTY')" "$f" 2>&1) \
+              || { echo "::error file=$f::invalid JSON"; echo "$out"; bad=1; continue; }
+            case "$out" in *EMPTY*) skipped=$((skipped+1));; *) checked=$((checked+1));; esac
           done <<EOF
           $(find . -name '*.json' -not -path './.git/*' \
               -not -path '*/fixtures/*' -not -path '*/fixture/*' \
