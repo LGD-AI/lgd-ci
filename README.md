@@ -29,3 +29,19 @@ PR 门禁采用松散检查（不强制分支最新），代价是合并后可�
 - 工作流只授予 contents: read，不接触 secrets
 - 第三方 action 用官方 tag 或完整 SHA；本仓内升级视为一次可审查提交
 - 修改本仓后，调用方需同步更新 pin 的 SHA（这是设计意图，不是缺陷）
+
+## 版本化与升级
+
+本仓已有 `v1.0.0` 起算的 release 与 tag（tag 只做"人可读坐标"，**永不移动**）。维护者怎么发版、
+调用方怎么升级、出问题怎么回滚，见 [UPGRADING.md](./UPGRADING.md)。
+
+新增能力一律以 **opt-in input（默认 false）** 形式加入，避免"调用方什么都没改，行为却变了"。
+当前可选能力：
+
+| input | 默认 | 作用 |
+|---|---|---|
+| `python-version` | `"3.11"` | 解释器版本 |
+| `run-tests` | `false` | 有 `tests/` 就跑 pytest |
+| `require-skill-md` | `false` | 根 `SKILL.md` 必须有 YAML front matter 与 name/description |
+| `verify-lockfile` | `true` | 用 `gh actions-lock --verify` 校验 `actions.lock` |
+| `verify-lockfile-refs` | `false` | 核对 `actions.lock` 是否逐条覆盖工作流 `uses:` 字面值（防静默 `startup_failure`） |

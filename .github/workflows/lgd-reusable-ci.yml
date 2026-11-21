@@ -14,6 +14,14 @@ on:
       verify-lockfile:
         type: boolean
         default: true
+      # 引用一致性预检：核对 actions.lock 是否逐条覆盖工作流里实际写的 uses: 字面值。
+      # 为什么需要：lockfile 记的是精确版本（actions/checkout@v7.0.1），工作流若写浮动
+      # major（actions/checkout@v7），GitHub 会判定整个 workflow 无法启动（startup_failure），
+      # 且 git push 不报错、页面上没有日志 —— 属于静默瘫痪，只能靠 dispatch 才逼出报错。
+      # 默认关闭（false）：开关默认值一旦改动，会让全部调用方行为变化；由调用方逐仓开启。
+      verify-lockfile-refs:
+        type: boolean
+        default: false
 permissions:
   contents: read
 
@@ -83,6 +91,71 @@ jobs:
           fi
           gh extension install github/gh-actions-lock >/dev/null 2>&1 || true
           gh actions-lock --verify
+      - name: Lockfile ref consistency (opt-in, catches silent startup_failure)
+        if: ${{ inputs.verify-lockfile-refs }}
+        run: |
+          set -e
+          python - <<'PY'
+          """核对 actions.lock 是否逐条覆盖工作流 uses: 的字面值。
+
+          归一化两条平台规则（否则全是误报）：
+            1) 子路径 action 归到仓库级：github/codeql-action/init@v -> github/codeql-action@v
+            2) uses: 指向 .github/workflows/*.yml 的 reusable workflow 不计入 lockfile
+          """
+          import glob, os, re, sys
+          lock = os.path.join('.github', 'workflows', 'actions.lock')
+          if not os.path.exists(lock):
+              print('no actions.lock - ref consistency check skipped')
+              sys.exit(0)
+
+          deps, wf_map, cur, last = set(), {}, None, None
+          for line in open(lock, encoding='utf-8'):
+              if not line.strip() or line.strip().startswith('#'):
+                  continue
+              ind = len(line) - len(line.lstrip())
+              s = line.strip()
+              if ind == 0 and s.endswith(':'):
+                  cur = s[:-1]; continue
+              if ind == 4 and s.startswith("'"):
+                  key = s.split(':', 1)[0].strip().strip("'")
+                  rest = s.split(':', 1)[1].strip()
+                  if cur == 'workflows':
+                      wf_map[key] = [] if rest == '[]' else None; last = key
+                  elif cur == 'dependencies':
+                      deps.add(key)
+                  continue
+              if ind == 8 and cur == 'workflows' and s.startswith('- ') and last:
+                  wf_map[last] = (wf_map[last] or []) + [s[2:].strip().strip("'")]
+
+          def norm(ref):
+              if ref.startswith('./') or '/.github/workflows/' in ref or '@' not in ref:
+                  return None
+              left, right = ref.split('@', 1)
+              parts = left.split('/')
+              return (('/'.join(parts[:2])) if len(parts) > 2 else left) + '@' + right
+
+          bad = 0
+          for f in sorted(glob.glob('.github/workflows/*.y*ml')):
+              rel = f.replace(os.sep, '/')
+              refs = [m.group(1) for m in
+                      (re.search(r"uses:\s*['\"]?([^#\s'\"]+)", line)
+                       for line in open(f, encoding='utf-8', errors='ignore')) if m]
+              if not refs:
+                  continue
+              refs = [r for r in (norm(x) for x in refs) if r]
+              if rel not in wf_map:
+                  print('::warning::' + rel + ': missing from actions.lock workflows section')
+                  bad += 1; continue
+              listed = {norm(x) or x for x in (wf_map[rel] or [])}
+              miss_dep = sorted({r for r in refs if r not in deps})
+              miss_list = sorted({r for r in refs if r not in listed})
+              if miss_dep or miss_list:
+                  bad += 1
+                  print('::error file=' + rel + '::refs not covered by actions.lock: '
+                        + ', '.join(sorted(set(miss_dep + miss_list))))
+          print('lockfile ref consistency: %d inconsistent workflow(s)' % bad)
+          sys.exit(1 if bad else 0)
+          PY
       - name: Tests
         if: ${{ inputs.run-tests }}
         run: |
