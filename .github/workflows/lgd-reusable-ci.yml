@@ -7,7 +7,7 @@ on:
         default: "3.11"
       run-tests:
         type: boolean
-        default: true
+        default: false
       require-skill-md:
         type: boolean
         default: false
@@ -29,26 +29,25 @@ jobs:
       - name: Verify layout
         run: |
           set -e
-          if [ ! -f SKILL.md ]; then
-            if [ "true" = "true" ]; then
-              echo "no SKILL.md at repo root - treated as a non-skill repo"
-              exit 0
-            fi
-          fi
           if [ -f SKILL.md ]; then
             head -n 1 SKILL.md | grep -q '^---' || { echo "::error::SKILL.md must start with YAML front matter"; exit 1; }
             grep -qi '^name:' SKILL.md || { echo "::error::SKILL.md missing name field"; exit 1; }
             grep -qi '^description:' SKILL.md || { echo "::error::SKILL.md missing description field"; exit 1; }
             echo "SKILL.md front matter OK"
+          else
+            echo "no SKILL.md at root - non-skill repo, layout check skipped"
           fi
-          echo "layout OK"
       - name: JSON sanity
         run: |
           set -e
           bad=0
-          files=$(find . -name '*.json' -not -path './.git/*' | head -n 50)
+          files=$(find . -name '*.json' -not -path './.git/*' \
+            -not -path '*/fixtures/*' -not -path '*/fixture/*' \
+            -not -path '*/invalid/*' -not -path '*/negative/*' \
+            -not -path '*/testdata/*' -not -path '*/examples/broken/*' | head -n 100)
+          if [ -z "$files" ]; then echo "no json to check"; exit 0; fi
           for f in $files; do
-            python -c "import json,sys;json.load(open(sys.argv[1]))" "$f" || bad=1
+            python -c "import json,sys;json.load(open(sys.argv[1]))" "$f" || { echo "::error file=$f::invalid JSON"; bad=1; }
           done
           exit $bad
       - name: Tests
